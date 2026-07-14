@@ -1,45 +1,40 @@
--- =========================================================================
--- SPELL LIBRARY (Add new classes and spells here!)
--- =========================================================================
 local dispelSpells = {
     Poison = {
-        "Elune's Purification",-- Starcaller (Poison & Disease)
-        "Antivenom",          -- Venomancer
+        "Elune's Purification",
+        "Antivenom",
         "Cure Poison",         
     },
     Curse = {
-        "Hexbreak",           -- Witch Doctor (Bound to Right Click)
-        "Blight Antidote",    -- Venomancer (Talent)
-        "Devour Curse",       -- Cultist (Talent)
+        "Hexbreak",
+        "Blight Antidote",
+        "Devour Curse",
         "Remove Curse",        
     },
     Magic = {
-        "Burn Impurities",    -- Pyromancer (Talent - Bound to Left Click)
-        "Devour Magic",       -- Cultist
+        "Burn Impurities",
+        "Devour Magic",
         "Dispel Magic",
         "Cleanse",
     },
     Disease = {
-        "Elune's Purification",-- Starcaller (Poison & Disease)
-        "Burn Impurities",    -- Pyromancer (Talent - Bound to Left Click)
+        "Elune's Purification",
+        "Burn Impurities",
         "Cure Disease",
         "Purify",
     },
     Bleed = {
-        "Cauterize",          -- Pyromancer (Talent - Bound to Right Click)
+        "Cauterize",
     }
 }
 
--- =========================================================================
--- ADDON LOGIC & CONFIGURATION
--- =========================================================================
 local frame = CreateFrame("Frame", "DecursiveLiteMain", UIParent)
 frame:SetSize(227, 50) 
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 frame:SetMovable(true)
 frame:SetClampedToScreen(true)
 
--- Tiny anchor handle placed directly above the first button
+local customAlertSound = "Interface\\AddOns\\DecursiveLite\\Sounds\\AfflictionAlert.ogg"
+
 local handle = CreateFrame("Button", "DecursiveLiteHandle", frame)
 handle:SetSize(8, 8)
 handle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
@@ -76,23 +71,23 @@ handle:SetScript("OnLeave", function(self)
 end)
 
 local debuffColors = {
-    Magic   = {0.2, 0.2, 0.8}, -- Blue
-    Curse   = {0.8, 0.2, 0.8}, -- Purple
-    Poison  = {0.2, 0.8, 0.2}, -- Green
-    Disease = {0.6, 0.4, 0.2}, -- Brown
-    Bleed   = {0.8, 0.1, 0.1}, -- Red
+    Magic   = {0.2, 0.2, 0.8},
+    Curse   = {0.8, 0.2, 0.8},
+    Poison  = {0.2, 0.8, 0.2},
+    Disease = {0.6, 0.4, 0.2},
+    Bleed   = {0.8, 0.1, 0.1},
 }
 
 local activeSpells = { Poison = nil, Curse = nil, Magic = nil, Disease = nil, Bleed = nil }
 local buttons = {} 
 local activeUnits = {} 
 local soundPlayed = false
+local isTesting = false
 
 local BUTTON_SIZE = 20
 local BUTTON_SPACING = 3
 local BUTTONS_PER_ROW = 10 
 
--- Scan spellbook
 local function ScanPlayerSpellbook()
     for category, spellList in pairs(dispelSpells) do
         activeSpells[category] = nil 
@@ -105,7 +100,6 @@ local function ScanPlayerSpellbook()
     end
 end
 
--- Custom checker to identify Bleeds since WoW returns nil type for them
 local function GetUnitDebuffType(unit, index)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId = UnitDebuff(unit, index)
     if not name then return nil end
@@ -134,7 +128,6 @@ local function PlayerCanDispel(debuffType)
     return activeSpells[debuffType] ~= nil
 end
 
--- Determine best macro
 local function GetBestDispelMacro(unit, clickType)
     if not UnitExists(unit) then return "" end
     
@@ -168,16 +161,19 @@ local function GetBestDispelMacro(unit, clickType)
 end
 
 local function CheckAllGroupDebuffs()
-    local anyoneAfflictedAndInRange = false
-    for u, _ in pairs(buttons) do
-        if UnitExists(u) and activeUnits[u] then
-            if u == "player" or UnitInRange(u) then
-                for i = 1, 40 do
-                    local debuffType = GetUnitDebuffType(u, i)
-                    if not debuffType and not UnitDebuff(u, i) then break end
-                    if debuffType and PlayerCanDispel(debuffType) then
-                        anyoneAfflictedAndInRange = true
-                        break
+    local anyoneAfflictedAndInRange = isTesting
+    
+    if not anyoneAfflictedAndInRange then
+        for u, _ in pairs(buttons) do
+            if UnitExists(u) and activeUnits[u] then
+                if u == "player" or UnitInRange(u) then
+                    for i = 1, 40 do
+                        local debuffType = GetUnitDebuffType(u, i)
+                        if not debuffType and not UnitDebuff(u, i) then break end
+                        if debuffType and PlayerCanDispel(debuffType) then
+                            anyoneAfflictedAndInRange = true
+                            break
+                        end
                     end
                 end
             end
@@ -186,7 +182,7 @@ local function CheckAllGroupDebuffs()
     
     if anyoneAfflictedAndInRange then
         if not soundPlayed then
-            PlaySoundFile("Sound\\interface\\AlarmClockWarning3.wav")
+            PlaySoundFile(customAlertSound)
             soundPlayed = true
         end
     else
@@ -194,7 +190,6 @@ local function CheckAllGroupDebuffs()
     end
 end
 
--- Sets the border (edge) to Class Color using WoW's native backdrop system
 local function UpdateUnitBorderColor(unit, button)
     if not UnitExists(unit) then return end
 
@@ -207,7 +202,6 @@ local function UpdateUnitBorderColor(unit, button)
     end
 end
 
--- Scans the target player for a Raid Icon and draws it at the top-center of the button
 local function UpdateUnitRaidTarget(unit, button)
     if not UnitExists(unit) then 
         button.raidIcon:Hide()
@@ -244,7 +238,6 @@ local function UpdateUnitDebuff(unit, button)
         button.innerBG:SetVertexColor(0.01, 0.02, 0.01, 0.4) 
     end
 
-    -- Update border and raid marks
     UpdateUnitBorderColor(unit, button)
     UpdateUnitRaidTarget(unit, button)
 end
@@ -379,4 +372,142 @@ end)
 ScanPlayerSpellbook()
 RefreshButtonVisibility()
 
-print("|cFF00FF00DecursiveLite by Pawie successfully loaded!|r")
+SLASH_DECURSIVELITE1 = "/dl"
+SLASH_DECURSIVELITE2 = "/decursivelite"
+
+local function ResetFramePosition()
+    frame:ClearAllPoints()
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    print("|cFF00FF00DecursiveLite:|r Frame position has been reset to the center of your screen.")
+end
+
+local function LockFrame()
+    handle:Hide()
+    handle:EnableMouse(false)
+    print("|cFF00FF00DecursiveLite:|r Frame is now |cFFFF0000LOCKED|r.")
+end
+
+local function UnlockFrame()
+    handle:Show()
+    handle:EnableMouse(true)
+    handle:SetAlpha(1)
+    print("|cFF00FF00DecursiveLite:|r Frame is now |cFF00FF00UNLOCKED|r. Hold Shift on the tiny handle above the first button to drag.")
+end
+
+local function ToggleTestMode()
+    isTesting = not isTesting
+    soundPlayed = false
+    
+    if isTesting then
+        print("|cFF00FF00DecursiveLite:|r Test mode |cFF00FF00ENABLED|r. Simulating debuffs & audio alert...")
+        local types = {"Magic", "Curse", "Poison", "Disease", "Bleed"}
+        local count = 1
+        for _, btn in pairs(buttons) do
+            if btn:IsShown() then
+                local fakeDebuff = types[(count % #types) + 1]
+                local color = debuffColors[fakeDebuff]
+                btn:SetBackdropColor(color[1], color[2], color[3], 1.0)
+                btn.innerBG:SetVertexColor(color[1], color[2], color[3], 1.0)
+                count = count + 1
+            end
+        end
+    else
+        print("|cFF00FF00DecursiveLite:|r Test mode |cFFFF0000DISABLED|r. Reverting to normal.")
+        RefreshButtonVisibility()
+    end
+    CheckAllGroupDebuffs()
+end
+
+SlashCmdList["DECURSIVELITE"] = function(msg)
+    local cmd, arg = string.split(" ", msg:lower())
+    
+    if cmd == "reset" then
+        ResetFramePosition()
+    elseif cmd == "lock" then
+        LockFrame()
+    elseif cmd == "unlock" then
+        UnlockFrame()
+    elseif cmd == "test" then
+        ToggleTestMode()
+    else
+        print("|cFF00FF00DecursiveLite Commands:|r")
+        print("  |cFF00FF00/dl reset|r - Resets the grid position.")
+        print("  |cFF00FF00/dl lock|r - Locks the frame.")
+        print("  |cFF00FF00/dl unlock|r - Unlocks the frame.")
+        print("  |cFF00FF00/dl test|r - Toggles simulated test debuffs.")
+    end
+end
+
+local panel = CreateFrame("Frame", "DecursiveLiteOptionsPanel", UIParent)
+panel.name = "DecursiveLite"
+
+local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+title:SetPoint("TOPLEFT", 16, -16)
+title:SetText("|cFF00FF00DecursiveLite|r - Configurations")
+
+local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+desc:SetText("A lightweight and highly optimized decurse grid built specifically for Ascension (CoA).")
+
+local guideHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+guideHeader:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -20)
+guideHeader:SetText("Quick Guide & Features:")
+
+local guideText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+guideText:SetPoint("TOPLEFT", guideHeader, "BOTTOMLEFT", 10, -8)
+guideText:SetJustifyH("LEFT")
+guideText:SetText(
+    "- |cFF00FF00Mouse Drag:|r Write |cFF00FF00/dl unlock|r, then hold |cFF00FF00Shift|r and drag the tiny gray handle above the first button.\n" ..
+    "- |cFF00FF00Left-Click Grid:|r Dispel Poison / Magic spells.\n" ..
+    "- |cFF00FF00Right-Click Grid:|r Dispel Curse / Disease / Bleed spells.\n" ..
+    "- |cFF00FF00Borders:|r Permanently locked to target class colors.\n" ..
+    "- |cFF00FF00Raid Icons:|r Dynamic 10x10px raid markers displayed centered above frames."
+)
+
+local cmdHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+cmdHeader:SetPoint("TOPLEFT", guideText, "BOTTOMLEFT", -10, -20)
+cmdHeader:SetText("Available Slash Commands:")
+
+local cmdList = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+cmdList:SetPoint("TOPLEFT", cmdHeader, "BOTTOMLEFT", 10, -8)
+cmdList:SetJustifyH("LEFT")
+cmdList:SetText(
+    "|cFF00FF00/dl reset|r - Snaps the grid back to the center of your screen.\n" ..
+    "|cFF00FF00/dl lock|r - Disables dragging and hides the gray handle frame.\n" ..
+    "|cFF00FF00/dl unlock|r - Reveals the drag handle and enables frame positioning.\n" ..
+    "|cFF00FF00/dl test|r - Spawns simulated dummy debuffs across the active grid."
+)
+
+local btnHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+btnHeader:SetPoint("TOPLEFT", cmdList, "BOTTOMLEFT", -10, -20)
+btnHeader:SetText("Interactive Panel Actions:")
+
+local btnReset = CreateFrame("Button", "DecursiveLiteOptReset", panel, "UIPanelButtonTemplate")
+btnReset:SetSize(120, 26)
+btnReset:SetPoint("TOPLEFT", btnHeader, "BOTTOMLEFT", 0, -10)
+btnReset:SetText("Reset Position")
+btnReset:SetScript("OnClick", function() ResetFramePosition() end)
+
+local isLockedOpt = true
+local btnLock = CreateFrame("Button", "DecursiveLiteOptLock", panel, "UIPanelButtonTemplate")
+btnLock:SetSize(120, 26)
+btnLock:SetPoint("LEFT", btnReset, "RIGHT", 10, 0)
+btnLock:SetText("Unlock / Lock")
+btnLock:SetScript("OnClick", function()
+    isLockedOpt = not isLockedOpt
+    if isLockedOpt then
+        LockFrame()
+    else
+        UnlockFrame()
+    end
+end)
+
+local btnTest = CreateFrame("Button", "DecursiveLiteOptTest", panel, "UIPanelButtonTemplate")
+btnTest:SetSize(120, 26)
+btnTest:SetPoint("LEFT", btnLock, "RIGHT", 10, 0)
+btnTest:SetText("Toggle Test Mode")
+btnTest:SetScript("OnClick", function() ToggleTestMode() end)
+
+InterfaceOptions_AddCategory(panel)
+
+print("|cFF00FF00DecursiveLite Beta by Pawie @ Vol'jin successfully loaded!|r")
