@@ -1,17 +1,20 @@
 local dispelSpells = {
     Poison = {
+        "Roll Back",           -- Chronomancer (Universal Dispel)
         "Sanctify",            -- Sun Cleric (Dispel: Magic, Poison, Disease)
         "Elune's Purification",-- Starcaller (Poison & Disease)
         "Antivenom",          -- Venomancer
         "Cure Poison",         
     },
     Curse = {
+        "Roll Back",           -- Chronomancer (Universal Dispel)
         "Hexbreak",           -- Witch Doctor (Bound to Right Click)
         "Blight Antidote",    -- Venomancer (Talent)
         "Devour Curse",       -- Cultist (Talent)
         "Remove Curse",        
     },
     Magic = {
+        "Roll Back",           -- Chronomancer (Universal Dispel)
         "Sanctify",            -- Sun Cleric (Dispel: Magic, Poison, Disease)
         "Burn Impurities",    -- Pyromancer (Talent - Bound to Left Click)
         "Devour Magic",       -- Cultist
@@ -19,6 +22,7 @@ local dispelSpells = {
         "Cleanse",
     },
     Disease = {
+        "Roll Back",           -- Chronomancer (Universal Dispel)
         "Sanctify",            -- Sun Cleric (Dispel: Magic, Poison, Disease)
         "Elune's Purification",-- Starcaller (Poison & Disease)
         "Burn Impurities",    -- Pyromancer (Talent - Bound to Left Click)
@@ -26,6 +30,7 @@ local dispelSpells = {
         "Purify",
     },
     Bleed = {
+        "Roll Back",           -- Chronomancer (Universal Dispel)
         "Cauterize",          -- Pyromancer (Talent - Bound to Right Click)
     }
 }
@@ -74,11 +79,11 @@ handle:SetScript("OnLeave", function(self)
 end)
 
 local debuffColors = {
-    Magic   = {0.2, 0.2, 0.8},
-    Curse   = {0.8, 0.2, 0.8},
-    Poison  = {0.2, 0.8, 0.2},
-    Disease = {0.6, 0.4, 0.2},
-    Bleed   = {0.8, 0.1, 0.1},
+    Magic   = {0.2, 0.2, 1.0}, -- Original Decursive Magic Blue
+    Curse   = {0.6, 0.0, 1.0}, -- Original Decursive Curse Purple
+    Poison  = {0.0, 0.6, 0.0}, -- Original Decursive Poison Green
+    Disease = {0.6, 0.4, 0.0}, -- Original Decursive Disease Brown/Yellow
+    Bleed   = {0.8, 0.1, 0.1}, -- Custom Bleed Red
 }
 
 local activeSpells = { Poison = nil, Curse = nil, Magic = nil, Disease = nil, Bleed = nil }
@@ -237,10 +242,9 @@ local function UpdateUnitDebuff(unit, button)
         end
     end
 
-    -- If NO debuffs: Apply the cozy semi-transparent Decursive green color scheme
     if not hasDebuff then
-        button:SetBackdropColor(0, 0.15, 0.05, 0.1)      -- Soft backdrop alpha
-        button.innerBG:SetVertexColor(0.02, 0.15, 0.05, 0.45) -- Standard warm green inner color
+        button:SetBackdropColor(0, 0.15, 0.05, 0.1)      
+        button.innerBG:SetVertexColor(0.02, 0.15, 0.05, 0.45) 
     end
 
     UpdateUnitBorderColor(unit, button)
@@ -264,7 +268,6 @@ local function GetOrCreateButton(unit)
     local btn = CreateFrame("Button", "DecursiveLiteBtn_"..unit, frame, "SecureActionButtonTemplate")
     btn:SetSize(BUTTON_SIZE, BUTTON_SIZE)
     
-    -- Thicker border configs (edgeSize changed from 1 to 2)
     btn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -272,7 +275,6 @@ local function GetOrCreateButton(unit)
         insets = { left = 2, right = 2, top = 2, bottom = 2 }
     })
 
-    -- Reposition inner texture to adapt perfectly to the thicker 2px frame border
     local innerBG = btn:CreateTexture(nil, "ARTWORK")
     innerBG:SetPoint("TOPLEFT", btn, "TOPLEFT", 2, -2)
     innerBG:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -2, 2) 
