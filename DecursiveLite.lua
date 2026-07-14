@@ -35,16 +35,33 @@ local dispelSpells = {
     }
 }
 
+local activeSpells = { Poison = nil, Curse = nil, Magic = nil, Disease = nil, Bleed = nil }
+
+local function ScanPlayerSpellbook()
+    for category, spellList in pairs(dispelSpells) do
+        activeSpells[category] = nil 
+        for _, spellName in ipairs(spellList) do
+            if GetSpellInfo(spellName) then
+                activeSpells[category] = spellName 
+                break 
+            end
+        end
+    end
+end
+
 local frame = CreateFrame("Frame", "DecursiveLiteMain", UIParent)
-frame:SetSize(227, 50) 
+frame:SetWidth(227)
+frame:SetHeight(50)
 frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 frame:SetMovable(true)
 frame:SetClampedToScreen(true)
 
+-- Locked down to your premium custom sound exclusively
 local customAlertSound = "Interface\\AddOns\\DecursiveLite\\Sounds\\AfflictionAlert.ogg"
 
 local handle = CreateFrame("Button", "DecursiveLiteHandle", frame)
-handle:SetSize(8, 8)
+handle:SetWidth(8)
+handle:SetHeight(8)
 handle:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 2)
 handle:EnableMouse(true)
 handle:RegisterForDrag("LeftButton")
@@ -79,33 +96,25 @@ handle:SetScript("OnLeave", function(self)
 end)
 
 local debuffColors = {
-    Magic   = {0.2, 0.2, 1.0}, -- Original Decursive Magic Blue
-    Curse   = {0.6, 0.0, 1.0}, -- Original Decursive Curse Purple
-    Poison  = {0.0, 0.6, 0.0}, -- Original Decursive Poison Green
-    Disease = {0.6, 0.4, 0.0}, -- Original Decursive Disease Brown/Yellow
-    Bleed   = {0.8, 0.1, 0.1}, -- Custom Bleed Red
+    Magic   = {0.2, 0.2, 1.0}, 
+    Curse   = {0.6, 0.0, 1.0}, 
+    Poison  = {0.0, 0.6, 0.0}, 
+    Disease = {0.6, 0.4, 0.0}, 
+    Bleed   = {0.8, 0.1, 0.1}, 
 }
 
-local activeSpells = { Poison = nil, Curse = nil, Magic = nil, Disease = nil, Bleed = nil }
 local buttons = {} 
 local activeUnits = {} 
 local soundPlayed = false
 local isTesting = false
 
-local BUTTON_SIZE = 20
-local BUTTON_SPACING = 3
-local BUTTONS_PER_ROW = 10 
-
-local function ScanPlayerSpellbook()
-    for category, spellList in pairs(dispelSpells) do
-        activeSpells[category] = nil 
-        for _, spellName in ipairs(spellList) do
-            if GetSpellInfo(spellName) then
-                activeSpells[category] = spellName 
-                break 
-            end
-        end
-    end
+local function GetDB(key)
+    local db = DecursiveLiteDB or {}
+    if key == "borderStyle" then return db.borderStyle or "soft" end
+    if key == "size" then return db.size or 20 end
+    if key == "maxPerRow" then return db.maxPerRow or 10 end
+    if key == "hideSolo" then return db.hideSolo == nil and false or db.hideSolo end
+    return nil
 end
 
 local function GetUnitDebuffType(unit, index)
@@ -191,7 +200,7 @@ local function CheckAllGroupDebuffs()
     
     if anyoneAfflictedAndInRange then
         if not soundPlayed then
-            PlaySoundFile(customAlertSound)
+            PlaySoundFile(customAlertSound) -- Clean play call directly to your ogg
             soundPlayed = true
         end
     else
@@ -199,16 +208,24 @@ local function CheckAllGroupDebuffs()
     end
 end
 
+local function GetCurrentUISettings()
+    if GetDB("borderStyle") == "soft" then
+        return 0.5, 0.08, 0.3
+    else
+        return 0.8, 0.1, 0.45
+    end
+end
+
 local function UpdateUnitBorderColor(unit, button)
     if not UnitExists(unit) then return end
+    local borderAlpha = GetCurrentUISettings()
 
     local _, class = UnitClass(unit)
     if class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then
         local color = RAID_CLASS_COLORS[class]
-        -- Adjusted: Lowered alpha value from 0.8 to 0.5 to make class borders softer
-        button:SetBackdropBorderColor(color.r, color.g, color.b, 0.5)
+        button:SetBackdropBorderColor(color.r, color.g, color.b, borderAlpha)
     else
-        button:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.5)
+        button:SetBackdropBorderColor(0.5, 0.5, 0.5, borderAlpha)
     end
 end
 
@@ -244,20 +261,39 @@ local function UpdateUnitDebuff(unit, button)
     end
 
     if not hasDebuff then
-        button:SetBackdropColor(0, 0.15, 0.05, 0.08)      
-        -- Adjusted: Lowered inner BG opacity from 0.45 to 0.3 for a more transparent look
-        button.innerBG:SetVertexColor(0.02, 0.15, 0.05, 0.3) 
+        local _, bgAlpha, innerAlpha = GetCurrentUISettings()
+        button:SetBackdropColor(0, 0.15, 0.05, bgAlpha)      
+        button.innerBG:SetVertexColor(0.02, 0.15, 0.05, innerAlpha) 
     end
 
     UpdateUnitBorderColor(unit, button)
     UpdateUnitRaidTarget(unit, button)
 end
 
+local function UpdateAllActiveFrames()
+    local bSize = GetDB("size")
+    for unit, btn in pairs(buttons) do
+        btn:SetWidth(bSize)
+        btn:SetHeight(bSize)
+        if btn:IsShown() then
+            UpdateUnitDebuff(unit, btn)
+        end
+    end
+end
+
 local function UpdateGroupRoster()
     for k, v in pairs(activeUnits) do activeUnits[k] = false end
-    if GetNumRaidMembers() > 0 then
+    
+    local inRaid = GetNumRaidMembers() > 0
+    local inParty = GetNumPartyMembers() > 0
+    
+    if GetDB("hideSolo") and not inRaid and not inParty and not isTesting then
+        return 
+    end
+
+    if inRaid then
         for i = 1, GetNumRaidMembers() do activeUnits["raid"..i] = true end
-    elseif GetNumPartyMembers() > 0 then
+    elseif inParty then
         activeUnits["player"] = true
         for i = 1, GetNumPartyMembers() do activeUnits["party"..i] = true end
     else
@@ -268,7 +304,9 @@ end
 local function GetOrCreateButton(unit)
     if buttons[unit] then return buttons[unit] end
     local btn = CreateFrame("Button", "DecursiveLiteBtn_"..unit, frame, "SecureActionButtonTemplate")
-    btn:SetSize(BUTTON_SIZE, BUTTON_SIZE)
+    local currentSize = GetDB("size")
+    btn:SetWidth(currentSize)
+    btn:SetHeight(currentSize)
     
     btn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
@@ -284,7 +322,8 @@ local function GetOrCreateButton(unit)
     btn.innerBG = innerBG
 
     local raidIcon = btn:CreateTexture(nil, "OVERLAY")
-    raidIcon:SetSize(10, 10) 
+    raidIcon:SetWidth(10)
+    raidIcon:SetHeight(10)
     raidIcon:SetPoint("TOP", btn, "TOP", 0, 4) 
     raidIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
     raidIcon:Hide()
@@ -320,14 +359,21 @@ local function RefreshButtonVisibility()
     local checkOrder = {"player", "party1", "party2", "party3", "party4"}
     for i = 1, 40 do table.insert(checkOrder, "raid"..i) end
 
+    local bSize = GetDB("size")
+    local bSpacing = 3
+    local maxPerRow = GetDB("maxPerRow")
+
     for _, unit in ipairs(checkOrder) do
         if activeUnits[unit] and UnitExists(unit) then
             local btn = GetOrCreateButton(unit)
-            local row = math.floor(visibleCount / BUTTONS_PER_ROW)
-            local col = visibleCount % BUTTONS_PER_ROW
+            btn:SetWidth(bSize)
+            btn:SetHeight(bSize)
             
-            local xOffset = col * (BUTTON_SIZE + BUTTON_SPACING)
-            local yOffset = -(row * (BUTTON_SIZE + BUTTON_SPACING))
+            local row = math.floor(visibleCount / maxPerRow)
+            local col = visibleCount % maxPerRow
+            
+            local xOffset = col * (bSize + bSpacing)
+            local yOffset = -(row * (bSize + bSpacing))
             
             btn:ClearAllPoints()
             btn:SetPoint("TOPLEFT", frame, "TOPLEFT", xOffset, yOffset)
@@ -356,6 +402,7 @@ frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
 frame:RegisterEvent("UI_ERROR_MESSAGE")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:RegisterEvent("RAID_TARGET_UPDATE") 
+frame:RegisterEvent("VARIABLES_LOADED")
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "UNIT_AURA" then
@@ -375,6 +422,13 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 UpdateUnitRaidTarget(unit, btn)
             end
         end
+    elseif event == "VARIABLES_LOADED" then
+        if not DecursiveLiteDB then DecursiveLiteDB = {} end
+        if not DecursiveLiteDB.borderStyle then DecursiveLiteDB.borderStyle = "soft" end
+        if not DecursiveLiteDB.size then DecursiveLiteDB.size = 20 end
+        if not DecursiveLiteDB.maxPerRow then DecursiveLiteDB.maxPerRow = 10 end
+        if DecursiveLiteDB.hideSolo == nil then DecursiveLiteDB.hideSolo = false end
+        UpdateAllActiveFrames()
     else
         RefreshButtonVisibility()
     end
@@ -411,6 +465,7 @@ local function ToggleTestMode()
     
     if isTesting then
         print("|cFF00FF00DecursiveLite:|r Test mode |cFF00FF00ENABLED|r. Simulating debuffs & audio alert...")
+        RefreshButtonVisibility() 
         local types = {"Magic", "Curse", "Poison", "Disease", "Bleed"}
         local count = 1
         for _, btn in pairs(buttons) do
@@ -424,8 +479,8 @@ local function ToggleTestMode()
         end
     else
         print("|cFF00FF00DecursiveLite:|r Test mode |cFFFF0000DISABLED|r. Reverting to normal.")
+        RefreshButtonVisibility()
     end
-    RefreshButtonVisibility()
 end
 
 SlashCmdList["DECURSIVELITE"] = function(msg)
@@ -456,64 +511,148 @@ title:SetPoint("TOPLEFT", 16, -16)
 title:SetText("|cFF00FF00DecursiveLite|r - Configurations")
 
 local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 desc:SetText("A lightweight and highly optimized decurse grid built specifically for Ascension (CoA).")
 
-local guideHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-guideHeader:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -20)
-guideHeader:SetText("Quick Guide & Features:")
+local dropdownHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+dropdownHeader:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -14)
+dropdownHeader:SetText("Grid Frame Visual Style:")
 
-local guideText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-guideText:SetPoint("TOPLEFT", guideHeader, "BOTTOMLEFT", 10, -8)
+local styleDropdown = CreateFrame("Frame", "DecursiveLiteStyleDropdown", panel, "UIDropDownMenuTemplate")
+styleDropdown:SetPoint("TOPLEFT", dropdownHeader, "BOTTOMLEFT", -15, -2)
+UIDropDownMenu_SetWidth(styleDropdown, 160)
+
+local function StyleDropdown_OnClick(self)
+    UIDropDownMenu_SetSelectedValue(styleDropdown, self.value)
+    if DecursiveLiteDB then
+        DecursiveLiteDB.borderStyle = self.value
+        UpdateAllActiveFrames()
+    end
+end
+
+local function StyleDropdown_Initialize()
+    local info = UIDropDownMenu_CreateInfo()
+    info.text = "Soft Borders (Default)"
+    info.value = "soft"
+    info.func = StyleDropdown_OnClick
+    info.checked = (GetDB("borderStyle") == "soft")
+    UIDropDownMenu_AddButton(info)
+    
+    info.text = "Bright Borders (Legacy)"
+    info.value = "bright"
+    info.func = StyleDropdown_OnClick
+    info.checked = (GetDB("borderStyle") == "bright")
+    UIDropDownMenu_AddButton(info)
+end
+
+local sizeSlider = CreateFrame("Slider", "DecursiveLiteSizeSlider", panel, "OptionsSliderTemplate")
+sizeSlider:SetPoint("TOPLEFT", styleDropdown, "BOTTOMLEFT", 15, -24)
+sizeSlider:SetMinMaxValues(14, 32)
+sizeSlider:SetValueStep(1)
+_G[sizeSlider:GetName() .. "Low"]:SetText("14px")
+_G[sizeSlider:GetName() .. "High"]:SetText("32px")
+
+local function UpdateSizeSliderLabel(val)
+    _G[sizeSlider:GetName() .. "Text"]:SetText("Button Size: |cFF00FF00" .. val .. "px|r")
+end
+
+sizeSlider:SetScript("OnValueChanged", function(self, value)
+    local val = math.floor(value)
+    UpdateSizeSliderLabel(val)
+    if DecursiveLiteDB then
+        DecursiveLiteDB.size = val
+        UpdateAllActiveFrames()
+        if not InCombatLockdown() then RefreshButtonVisibility() end
+    end
+end)
+
+local rowSlider = CreateFrame("Slider", "DecursiveLiteRowSlider", panel, "OptionsSliderTemplate")
+rowSlider:SetPoint("LEFT", sizeSlider, "RIGHT", 45, 0)
+rowSlider:SetMinMaxValues(2, 20)
+rowSlider:SetValueStep(1)
+_G[rowSlider:GetName() .. "Low"]:SetText("2")
+_G[rowSlider:GetName() .. "High"]:SetText("20")
+
+local function UpdateRowSliderLabel(val)
+    _G[rowSlider:GetName() .. "Text"]:SetText("Max Buttons Per Row: |cFF00FF00" .. val .. "|r")
+end
+
+rowSlider:SetScript("OnValueChanged", function(self, value)
+    local val = math.floor(value)
+    UpdateRowSliderLabel(val)
+    if DecursiveLiteDB then
+        DecursiveLiteDB.maxPerRow = val
+        if not InCombatLockdown() then RefreshButtonVisibility() end
+    end
+end)
+
+local soloCheck = CreateFrame("CheckButton", "DecursiveLiteSoloCheck", panel, "InterfaceOptionsCheckButtonTemplate")
+soloCheck:SetPoint("TOPLEFT", sizeSlider, "BOTTOMLEFT", -4, -18)
+_G[soloCheck:GetName() .. "Text"]:SetText("Hide Grid Container When Solo")
+
+soloCheck:SetScript("OnClick", function(self)
+    if DecursiveLiteDB then
+        DecursiveLiteDB.hideSolo = self:GetChecked() and true or false
+        if not InCombatLockdown() then RefreshButtonVisibility() end
+    end
+end)
+
+panel:SetScript("OnShow", function()
+    UIDropDownMenu_Initialize(styleDropdown, StyleDropdown_Initialize)
+    if GetDB("borderStyle") == "bright" then 
+        UIDropDownMenu_SetText(styleDropdown, "Bright Borders (Legacy)")
+    else 
+        UIDropDownMenu_SetText(styleDropdown, "Soft Borders (Default)") 
+    end
+
+    sizeSlider:SetValue(GetDB("size"))
+    UpdateSizeSliderLabel(GetDB("size"))
+
+    rowSlider:SetValue(GetDB("maxPerRow"))
+    UpdateRowSliderLabel(GetDB("maxPerRow"))
+
+    soloCheck:SetChecked(GetDB("hideSolo"))
+end)
+
+local guideHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+guideHeader:SetPoint("TOPLEFT", soloCheck, "BOTTOMLEFT", 4, -16)
+guideHeader:SetText("Quick Guide & Click Maps:")
+
+local guideText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+guideText:SetPoint("TOPLEFT", guideHeader, "BOTTOMLEFT", 10, -6)
 guideText:SetJustifyH("LEFT")
 guideText:SetText(
-    "- |cFF00FF00Mouse Drag:|r Write |cFF00FF00/dl unlock|r, then hold |cFF00FF00Shift|r and drag the tiny gray handle above the first button.\n" ..
-    "- |cFF00FF00Left-Click Grid:|r Dispel Poison / Magic spells.\n" ..
-    "- |cFF00FF00Right-Click Grid:|r Dispel Curse / Disease / Bleed spells.\n" ..
-    "- |cFF00FF00Borders:|r Permanently locked to target class colors.\n" ..
-    "- |cFF00FF00Raid Icons:|r Dynamic 10x10px raid markers displayed centered above frames."
+    "- |cFF00FF00Mouse Drag:|r Type |cFF00FF00/dl unlock|r, hold |cFF00FF00Shift|r, and drag the tiny anchor box above frame one.\n" ..
+    "- |cFF00FF00Left-Click Action:|r Triggers standard Poison / Magic dispel priorities dynamically.\n" ..
+    "- |cFF00FF00Right-Click Action:|r Triggers standard Curse / Disease / Bleed dispel priorities dynamically.\n" ..
+    "- |cFF00FF00Visual Overlays:|r Custom raid markers scale and center instantly above affected units."
 )
 
-local cmdHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-cmdHeader:SetPoint("TOPLEFT", guideText, "BOTTOMLEFT", -10, -20)
-cmdHeader:SetText("Available Slash Commands:")
-
-local cmdList = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-cmdList:SetPoint("TOPLEFT", cmdHeader, "BOTTOMLEFT", 10, -8)
-cmdList:SetJustifyH("LEFT")
-cmdList:SetText(
-    "|cFF00FF00/dl reset|r - Snaps the grid back to the center of your screen.\n" ..
-    "|cFF00FF00/dl lock|r - Disables dragging and hides the gray handle frame.\n" ..
-    "|cFF00FF00/dl unlock|r - Reveals the drag handle and enables frame positioning.\n" ..
-    "|cFF00FF00/dl test|r - Spawns simulated dummy debuffs across the active grid."
-)
-
-local btnHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-btnHeader:SetPoint("TOPLEFT", cmdList, "BOTTOMLEFT", -10, -20)
-btnHeader:SetText("Interactive Panel Actions:")
+local btnHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+btnHeader:SetPoint("TOPLEFT", guideText, "BOTTOMLEFT", -10, -16)
+btnHeader:SetText("Interactive Core Actions:")
 
 local btnReset = CreateFrame("Button", "DecursiveLiteOptReset", panel, "UIPanelButtonTemplate")
-btnReset:SetSize(120, 26)
-btnReset:SetPoint("TOPLEFT", btnHeader, "BOTTOMLEFT", 0, -10)
+btnReset:SetWidth(110)
+btnReset:SetHeight(24)
+btnReset:SetPoint("TOPLEFT", btnHeader, "BOTTOMLEFT", 0, -8)
 btnReset:SetText("Reset Position")
 btnReset:SetScript("OnClick", function() ResetFramePosition() end)
 
 local isLockedOpt = true
 local btnLock = CreateFrame("Button", "DecursiveLiteOptLock", panel, "UIPanelButtonTemplate")
-btnLock:SetSize(120, 26)
+btnLock:SetWidth(110)
+btnLock:SetHeight(24)
 btnLock:SetPoint("LEFT", btnReset, "RIGHT", 10, 0)
 btnLock:SetText("Unlock / Lock")
 btnLock:SetScript("OnClick", function()
     isLockedOpt = not isLockedOpt
-    if isLockedOpt then
-        LockFrame()
-    else
-        UnlockFrame()
-    end
+    if isLockedOpt then LockFrame() else UnlockFrame() end
 end)
 
 local btnTest = CreateFrame("Button", "DecursiveLiteOptTest", panel, "UIPanelButtonTemplate")
-btnTest:SetSize(120, 26)
+btnTest:SetWidth(110)
+btnTest:SetHeight(24)
 btnTest:SetPoint("LEFT", btnLock, "RIGHT", 10, 0)
 btnTest:SetText("Toggle Test Mode")
 btnTest:SetScript("OnClick", function() ToggleTestMode() end)
