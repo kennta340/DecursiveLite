@@ -205,9 +205,10 @@ local function UpdateUnitBorderColor(unit, button)
     local _, class = UnitClass(unit)
     if class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] then
         local color = RAID_CLASS_COLORS[class]
-        button:SetBackdropBorderColor(color.r, color.g, color.b, 0.8)
+        -- Adjusted: Lowered alpha value from 0.8 to 0.5 to make class borders softer
+        button:SetBackdropBorderColor(color.r, color.g, color.b, 0.5)
     else
-        button:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.8)
+        button:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.5)
     end
 end
 
@@ -243,8 +244,9 @@ local function UpdateUnitDebuff(unit, button)
     end
 
     if not hasDebuff then
-        button:SetBackdropColor(0, 0.15, 0.05, 0.1)      
-        button.innerBG:SetVertexColor(0.02, 0.15, 0.05, 0.45) 
+        button:SetBackdropColor(0, 0.15, 0.05, 0.08)      
+        -- Adjusted: Lowered inner BG opacity from 0.45 to 0.3 for a more transparent look
+        button.innerBG:SetVertexColor(0.02, 0.15, 0.05, 0.3) 
     end
 
     UpdateUnitBorderColor(unit, button)
