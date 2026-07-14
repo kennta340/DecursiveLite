@@ -128,7 +128,6 @@ local function GetUnitDebuffType(unit, index)
 end
 
 local function PlayerCanDispel(debuffType)
-    -- Safety override: Always return true during simulated testing so low-level characters can test the addon
     if isTesting then return true end
     return activeSpells[debuffType] ~= nil
 end
@@ -238,9 +237,10 @@ local function UpdateUnitDebuff(unit, button)
         end
     end
 
+    -- If NO debuffs: Apply the cozy semi-transparent Decursive green color scheme
     if not hasDebuff then
-        button:SetBackdropColor(0, 0, 0, 0.05) 
-        button.innerBG:SetVertexColor(0.01, 0.02, 0.01, 0.4) 
+        button:SetBackdropColor(0, 0.15, 0.05, 0.1)      -- Soft backdrop alpha
+        button.innerBG:SetVertexColor(0.02, 0.15, 0.05, 0.45) -- Standard warm green inner color
     end
 
     UpdateUnitBorderColor(unit, button)
@@ -264,16 +264,18 @@ local function GetOrCreateButton(unit)
     local btn = CreateFrame("Button", "DecursiveLiteBtn_"..unit, frame, "SecureActionButtonTemplate")
     btn:SetSize(BUTTON_SIZE, BUTTON_SIZE)
     
+    -- Thicker border configs (edgeSize changed from 1 to 2)
     btn:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 }
+        edgeSize = 2,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 }
     })
 
+    -- Reposition inner texture to adapt perfectly to the thicker 2px frame border
     local innerBG = btn:CreateTexture(nil, "ARTWORK")
-    innerBG:SetPoint("TOPLEFT", btn, "TOPLEFT", 1, -1)
-    innerBG:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -1, 1) 
+    innerBG:SetPoint("TOPLEFT", btn, "TOPLEFT", 2, -2)
+    innerBG:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -2, 2) 
     innerBG:SetTexture("Interface\\Buttons\\WHITE8X8")
     btn.innerBG = innerBG
 
@@ -419,8 +421,6 @@ local function ToggleTestMode()
     else
         print("|cFF00FF00DecursiveLite:|r Test mode |cFFFF0000DISABLED|r. Reverting to normal.")
     end
-    
-    -- Recalculate and update the grid to either force test-rendering or clean up
     RefreshButtonVisibility()
 end
 
