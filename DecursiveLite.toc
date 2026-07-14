@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: |cFF00FF00DecursiveLite|r
+## Notes: Lightweight decurse grid for Ascension (CoA) with Bleed support.
+## Author: Pawie
+## Version: 2.7.0
+
+DecursiveLite.lua
