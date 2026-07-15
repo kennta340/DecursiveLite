@@ -56,8 +56,12 @@ frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 frame:SetMovable(true)
 frame:SetClampedToScreen(true)
 
--- Locked down to your premium custom sound exclusively
 local customAlertSound = "Interface\\AddOns\\DecursiveLite\\Sounds\\AfflictionAlert.ogg"
+
+-- FIXED BUG: Create a private, dedicated scanner tooltip. 
+-- This completely prevents stealing focus from the player's primary GameTooltip!
+local scanTooltip = CreateFrame("GameTooltip", "DecursiveLiteScanTooltip", nil, "GameTooltipTemplate")
+scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
 
 local handle = CreateFrame("Button", "DecursiveLiteHandle", frame)
 handle:SetWidth(8)
@@ -107,6 +111,7 @@ local buttons = {}
 local activeUnits = {} 
 local soundPlayed = false
 local isTesting = false
+local myName = UnitName("player")
 
 local function GetDB(key)
     local db = DecursiveLiteDB or {}
@@ -115,6 +120,12 @@ local function GetDB(key)
     if key == "maxPerRow" then return db.maxPerRow or 10 end
     if key == "hideSolo" then return db.hideSolo == nil and false or db.hideSolo end
     return nil
+end
+
+local function SetDB(key, value)
+    if DecursiveLiteDB and DecursiveLiteDB.profiles and DecursiveLiteDB.profiles[myName] then
+        DecursiveLiteDB.profiles[myName][key] = value
+    end
 end
 
 local function GetUnitDebuffType(unit, index)
@@ -126,16 +137,16 @@ local function GetUnitDebuffType(unit, index)
     end
     
     if activeSpells.Bleed then
-        GameTooltip:SetOwner(UIParent, "ANCHOR_NONE")
-        GameTooltip:SetUnitDebuff(unit, index)
-        for i = 1, GameTooltip:NumLines() do
-            local text = _G["GameTooltipTextLeft"..i]:GetText()
+        -- FIXED BUG: Scans using the private scanTooltip instead of GameTooltip!
+        scanTooltip:ClearLines()
+        scanTooltip:SetUnitDebuff(unit, index)
+        for i = 1, scanTooltip:NumLines() do
+            local leftLine = _G["DecursiveLiteScanTooltipTextLeft"..i]
+            local text = leftLine and leftLine:GetText()
             if text and string.find(text, "Bleed") then
-                GameTooltip:Hide()
                 return "Bleed"
             end
         end
-        GameTooltip:Hide()
     end
     
     return nil
@@ -200,7 +211,7 @@ local function CheckAllGroupDebuffs()
     
     if anyoneAfflictedAndInRange then
         if not soundPlayed then
-            PlaySoundFile(customAlertSound) -- Clean play call directly to your ogg
+            PlaySoundFile(customAlertSound) 
             soundPlayed = true
         end
     else
@@ -424,10 +435,16 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
     elseif event == "VARIABLES_LOADED" then
         if not DecursiveLiteDB then DecursiveLiteDB = {} end
-        if not DecursiveLiteDB.borderStyle then DecursiveLiteDB.borderStyle = "soft" end
-        if not DecursiveLiteDB.size then DecursiveLiteDB.size = 20 end
-        if not DecursiveLiteDB.maxPerRow then DecursiveLiteDB.maxPerRow = 10 end
-        if DecursiveLiteDB.hideSolo == nil then DecursiveLiteDB.hideSolo = false end
+        if not DecursiveLiteDB.profiles then DecursiveLiteDB.profiles = {} end
+        
+        if not DecursiveLiteDB.profiles[myName] then
+            DecursiveLiteDB.profiles[myName] = {
+                borderStyle = "soft",
+                size = 20,
+                maxPerRow = 10,
+                hideSolo = false
+            }
+        end
         UpdateAllActiveFrames()
     else
         RefreshButtonVisibility()
@@ -524,10 +541,8 @@ UIDropDownMenu_SetWidth(styleDropdown, 160)
 
 local function StyleDropdown_OnClick(self)
     UIDropDownMenu_SetSelectedValue(styleDropdown, self.value)
-    if DecursiveLiteDB then
-        DecursiveLiteDB.borderStyle = self.value
-        UpdateAllActiveFrames()
-    end
+    SetDB("borderStyle", self.value)
+    UpdateAllActiveFrames()
 end
 
 local function StyleDropdown_Initialize()
@@ -545,6 +560,62 @@ local function StyleDropdown_Initialize()
     UIDropDownMenu_AddButton(info)
 end
 
+local profileHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+profileHeader:SetPoint("LEFT", dropdownHeader, "LEFT", 185, 0)
+profileHeader:SetText("Copy Profile From Character:")
+
+local profileDropdown = CreateFrame("Frame", "DecursiveLiteProfileDropdown", panel, "UIDropDownMenuTemplate")
+profileDropdown:SetPoint("TOPLEFT", profileHeader, "BOTTOMLEFT", -15, -2)
+UIDropDownMenu_SetWidth(profileDropdown, 160)
+
+local function ProfileDropdown_OnClick(self)
+    local sourceChar = self.value
+    if DecursiveLiteDB and DecursiveLiteDB.profiles and DecursiveLiteDB.profiles[sourceChar] then
+        local src = DecursiveLiteDB.profiles[sourceChar]
+        SetDB("borderStyle", src.borderStyle or "soft")
+        SetDB("size", src.size or 20)
+        SetDB("maxPerRow", src.maxPerRow or 10)
+        SetDB("hideSolo", src.hideSolo == nil and false or src.hideSolo)
+        
+        UpdateAllActiveFrames()
+        if not InCombatLockdown() then RefreshButtonVisibility() end
+        
+        _G["DecursiveLiteSizeSlider"]:SetValue(GetDB("size"))
+        _G["DecursiveLiteRowSlider"]:SetValue(GetDB("maxPerRow"))
+        _G["DecursiveLiteSoloCheck"]:SetChecked(GetDB("hideSolo"))
+        if GetDB("borderStyle") == "bright" then UIDropDownMenu_SetText(styleDropdown, "Bright Borders (Legacy)")
+        else UIDropDownMenu_SetText(styleDropdown, "Soft Borders (Default)") end
+        
+        print("|cFF00FF00DecursiveLite:|r Successfully copied profile from |cFFFFD100" .. sourceChar .. "|r!")
+    end
+    UIDropDownMenu_SetText(profileDropdown, "Select Character Profile")
+end
+
+local function ProfileDropdown_Initialize()
+    local info = UIDropDownMenu_CreateInfo()
+    if not DecursiveLiteDB or not DecursiveLiteDB.profiles then return end
+    
+    local hasProfiles = false
+    for name, _ in pairs(DecursiveLiteDB.profiles) do
+        if name ~= myName then 
+            info.text = name
+            info.value = name
+            info.func = ProfileDropdown_OnClick
+            info.checked = false
+            UIDropDownMenu_AddButton(info)
+            hasProfiles = true
+        end
+    end
+    
+    if not hasProfiles then
+        info.text = "No other profiles found"
+        info.value = nil
+        info.func = nil
+        info.disabled = true
+        UIDropDownMenu_AddButton(info)
+    end
+end
+
 local sizeSlider = CreateFrame("Slider", "DecursiveLiteSizeSlider", panel, "OptionsSliderTemplate")
 sizeSlider:SetPoint("TOPLEFT", styleDropdown, "BOTTOMLEFT", 15, -24)
 sizeSlider:SetMinMaxValues(14, 32)
@@ -559,11 +630,9 @@ end
 sizeSlider:SetScript("OnValueChanged", function(self, value)
     local val = math.floor(value)
     UpdateSizeSliderLabel(val)
-    if DecursiveLiteDB then
-        DecursiveLiteDB.size = val
-        UpdateAllActiveFrames()
-        if not InCombatLockdown() then RefreshButtonVisibility() end
-    end
+    SetDB("size", val)
+    UpdateAllActiveFrames()
+    if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
 
 local rowSlider = CreateFrame("Slider", "DecursiveLiteRowSlider", panel, "OptionsSliderTemplate")
@@ -580,10 +649,8 @@ end
 rowSlider:SetScript("OnValueChanged", function(self, value)
     local val = math.floor(value)
     UpdateRowSliderLabel(val)
-    if DecursiveLiteDB then
-        DecursiveLiteDB.maxPerRow = val
-        if not InCombatLockdown() then RefreshButtonVisibility() end
-    end
+    SetDB("maxPerRow", val)
+    if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
 
 local soloCheck = CreateFrame("CheckButton", "DecursiveLiteSoloCheck", panel, "InterfaceOptionsCheckButtonTemplate")
@@ -591,10 +658,8 @@ soloCheck:SetPoint("TOPLEFT", sizeSlider, "BOTTOMLEFT", -4, -18)
 _G[soloCheck:GetName() .. "Text"]:SetText("Hide Grid Container When Solo")
 
 soloCheck:SetScript("OnClick", function(self)
-    if DecursiveLiteDB then
-        DecursiveLiteDB.hideSolo = self:GetChecked() and true or false
-        if not InCombatLockdown() then RefreshButtonVisibility() end
-    end
+    SetDB("hideSolo", self:GetChecked() and true or false)
+    if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
 
 panel:SetScript("OnShow", function()
@@ -604,6 +669,9 @@ panel:SetScript("OnShow", function()
     else 
         UIDropDownMenu_SetText(styleDropdown, "Soft Borders (Default)") 
     end
+
+    UIDropDownMenu_Initialize(profileDropdown, ProfileDropdown_Initialize)
+    UIDropDownMenu_SetText(profileDropdown, "Select Character Profile")
 
     sizeSlider:SetValue(GetDB("size"))
     UpdateSizeSliderLabel(GetDB("size"))
@@ -622,10 +690,10 @@ local guideText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall
 guideText:SetPoint("TOPLEFT", guideHeader, "BOTTOMLEFT", 10, -6)
 guideText:SetJustifyH("LEFT")
 guideText:SetText(
-    "- |cFF00FF00Mouse Drag:|r Type |cFF00FF00/dl unlock|r, hold |cFF00FF00Shift|r, and drag the tiny anchor box above frame one.\n" ..
-    "- |cFF00FF00Left-Click Action:|r Triggers standard Poison / Magic dispel priorities dynamically.\n" ..
-    "- |cFF00FF00Right-Click Action:|r Triggers standard Curse / Disease / Bleed dispel priorities dynamically.\n" ..
-    "- |cFF00FF00Visual Overlays:|r Custom raid markers scale and center instantly above affected units."
+    "- |cFF00FF00Mouse Drag:|r Type |cFF00FF00/dl unlock|r, hold |cFF00FF00Shift|r, and drag the tiny anchor box.\n" ..
+    "- |cFF00FF00Left-Click Action:|r Triggers standard Poison / Magic dispel priorities.\n" ..
+    "- |cFF00FF00Right-Click Action:|r Triggers standard Curse / Disease / Bleed dispel priorities.\n" ..
+    "- |cFF00FF00Profile Manager:|r Select any alternate character from the dropdown to inherit their settings instantly."
 )
 
 local btnHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
