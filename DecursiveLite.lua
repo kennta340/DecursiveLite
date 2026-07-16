@@ -58,8 +58,6 @@ frame:SetClampedToScreen(true)
 
 local customAlertSound = "Interface\\AddOns\\DecursiveLite\\Sounds\\AfflictionAlert.ogg"
 
--- FIXED BUG: Create a private, dedicated scanner tooltip. 
--- This completely prevents stealing focus from the player's primary GameTooltip!
 local scanTooltip = CreateFrame("GameTooltip", "DecursiveLiteScanTooltip", nil, "GameTooltipTemplate")
 scanTooltip:SetOwner(UIParent, "ANCHOR_NONE")
 
@@ -119,6 +117,7 @@ local function GetDB(key)
     if key == "size" then return db.size or 20 end
     if key == "maxPerRow" then return db.maxPerRow or 10 end
     if key == "hideSolo" then return db.hideSolo == nil and false or db.hideSolo end
+    if key == "ignoreAntivenom" then return db.ignoreAntivenom == nil and true or db.ignoreAntivenom end -- Default true!
     return nil
 end
 
@@ -128,16 +127,32 @@ local function SetDB(key, value)
     end
 end
 
+-- Helper function to check if a friendly target already has the Antivenom buff active
+local function UnitHasAntivenom(unit)
+    for i = 1, 40 do
+        local name = UnitBuff(unit, i)
+        if not name then break end
+        if name == "Antivenom" then
+            return true
+        end
+    end
+    return false
+end
+
 local function GetUnitDebuffType(unit, index)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId = UnitDebuff(unit, index)
     if not name then return nil end
+    
+    -- NEW FEATURE: Check if we should ignore lighting up poisons if target has Antivenom active
+    if debuffType == "Poison" and GetDB("ignoreAntivenom") and UnitHasAntivenom(unit) then
+        return nil -- Filters out the poison, box stays green/normal!
+    end
     
     if debuffType and debuffType ~= "" then
         return debuffType
     end
     
     if activeSpells.Bleed then
-        -- FIXED BUG: Scans using the private scanTooltip instead of GameTooltip!
         scanTooltip:ClearLines()
         scanTooltip:SetUnitDebuff(unit, index)
         for i = 1, scanTooltip:NumLines() do
@@ -442,7 +457,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 borderStyle = "soft",
                 size = 20,
                 maxPerRow = 10,
-                hideSolo = false
+                hideSolo = false,
+                ignoreAntivenom = true -- Add profile baseline default
             }
         end
         UpdateAllActiveFrames()
@@ -576,6 +592,7 @@ local function ProfileDropdown_OnClick(self)
         SetDB("size", src.size or 20)
         SetDB("maxPerRow", src.maxPerRow or 10)
         SetDB("hideSolo", src.hideSolo == nil and false or src.hideSolo)
+        SetDB("ignoreAntivenom", src.ignoreAntivenom == nil and true or src.ignoreAntivenom)
         
         UpdateAllActiveFrames()
         if not InCombatLockdown() then RefreshButtonVisibility() end
@@ -583,6 +600,7 @@ local function ProfileDropdown_OnClick(self)
         _G["DecursiveLiteSizeSlider"]:SetValue(GetDB("size"))
         _G["DecursiveLiteRowSlider"]:SetValue(GetDB("maxPerRow"))
         _G["DecursiveLiteSoloCheck"]:SetChecked(GetDB("hideSolo"))
+        _G["DecursiveLiteAntivenomCheck"]:SetChecked(GetDB("ignoreAntivenom"))
         if GetDB("borderStyle") == "bright" then UIDropDownMenu_SetText(styleDropdown, "Bright Borders (Legacy)")
         else UIDropDownMenu_SetText(styleDropdown, "Soft Borders (Default)") end
         
@@ -662,6 +680,16 @@ soloCheck:SetScript("OnClick", function(self)
     if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
 
+-- NEW OPTION: Antivenom Filter Checkbox!
+local antivenomCheck = CreateFrame("CheckButton", "DecursiveLiteAntivenomCheck", panel, "InterfaceOptionsCheckButtonTemplate")
+antivenomCheck:SetPoint("LEFT", soloCheck, "RIGHT", 220, 0)
+_G[antivenomCheck:GetName() .. "Text"]:SetText("Ignore Poison if Antivenom Buff Active")
+
+antivenomCheck:SetScript("OnClick", function(self)
+    SetDB("ignoreAntivenom", self:GetChecked() and true or false)
+    if not InCombatLockdown() then RefreshButtonVisibility() end
+end)
+
 panel:SetScript("OnShow", function()
     UIDropDownMenu_Initialize(styleDropdown, StyleDropdown_Initialize)
     if GetDB("borderStyle") == "bright" then 
@@ -680,6 +708,7 @@ panel:SetScript("OnShow", function()
     UpdateRowSliderLabel(GetDB("maxPerRow"))
 
     soloCheck:SetChecked(GetDB("hideSolo"))
+    antivenomCheck:SetChecked(GetDB("ignoreAntivenom"))
 end)
 
 local guideHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
@@ -693,7 +722,7 @@ guideText:SetText(
     "- |cFF00FF00Mouse Drag:|r Type |cFF00FF00/dl unlock|r, hold |cFF00FF00Shift|r, and drag the tiny anchor box.\n" ..
     "- |cFF00FF00Left-Click Action:|r Triggers standard Poison / Magic dispel priorities.\n" ..
     "- |cFF00FF00Right-Click Action:|r Triggers standard Curse / Disease / Bleed dispel priorities.\n" ..
-    "- |cFF00FF00Profile Manager:|r Select any alternate character from the dropdown to inherit their settings instantly."
+    "- |cFF00FF00Smart Filters:|r Skips casting warnings on units equipped with ticking active Antivenom seeds."
 )
 
 local btnHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
