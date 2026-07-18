@@ -110,6 +110,7 @@ local activeUnits = {}
 local soundPlayed = false
 local isTesting = false
 local myName = UnitName("player")
+local needsSizeUpdate = false 
 
 local function GetDB(key)
     local db = DecursiveLiteDB or {}
@@ -117,7 +118,7 @@ local function GetDB(key)
     if key == "size" then return db.size or 20 end
     if key == "maxPerRow" then return db.maxPerRow or 10 end
     if key == "hideSolo" then return db.hideSolo == nil and false or db.hideSolo end
-    if key == "ignoreAntivenom" then return db.ignoreAntivenom == nil and true or db.ignoreAntivenom end -- Default true!
+    if key == "ignoreAntivenom" then return db.ignoreAntivenom == nil and true or db.ignoreAntivenom end
     return nil
 end
 
@@ -127,7 +128,6 @@ local function SetDB(key, value)
     end
 end
 
--- Helper function to check if a friendly target already has the Antivenom buff active
 local function UnitHasAntivenom(unit)
     for i = 1, 40 do
         local name = UnitBuff(unit, i)
@@ -143,9 +143,8 @@ local function GetUnitDebuffType(unit, index)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId = UnitDebuff(unit, index)
     if not name then return nil end
     
-    -- NEW FEATURE: Check if we should ignore lighting up poisons if target has Antivenom active
     if debuffType == "Poison" and GetDB("ignoreAntivenom") and UnitHasAntivenom(unit) then
-        return nil -- Filters out the poison, box stays green/normal!
+        return nil 
     end
     
     if debuffType and debuffType ~= "" then
@@ -172,30 +171,39 @@ local function PlayerCanDispel(debuffType)
     return activeSpells[debuffType] ~= nil
 end
 
+-- FIXED TIMING BUG: Built a dynamic, click-segregated macro generator.
+-- Left click ONLY handles Poison/Magic, Right click ONLY handles Curse/Disease/Bleed.
+-- This completely prevents "Nothing to dispel" errors when multiple debuffs overlap!
 local function GetBestDispelMacro(unit, clickType)
     if not UnitExists(unit) then return "" end
     
-    local targetDebuff = nil
+    local hasPoison, hasMagic, hasCurse, hasDisease, hasBleed = false, false, false, false, false
+    
     for i = 1, 40 do
         local debuffType = GetUnitDebuffType(unit, i)
-        if not debuffType then 
-            if not UnitDebuff(unit, i) then break end
-        end
+        if not debuffType and not UnitDebuff(unit, i) then break end
         
         if debuffType and PlayerCanDispel(debuffType) then
-            targetDebuff = debuffType
-            break
+            if debuffType == "Poison" then hasPoison = true
+            elseif debuffType == "Magic" then hasMagic = true
+            elseif debuffType == "Curse" then hasCurse = true
+            elseif debuffType == "Disease" then hasDisease = true
+            elseif debuffType == "Bleed" then hasBleed = true
+            end
         end
-    end
-
-    if targetDebuff and activeSpells[targetDebuff] then
-        return "/cast [@"..unit.."] " .. activeSpells[targetDebuff]
     end
 
     if clickType == "left" then
+        if hasPoison and activeSpells.Poison then return "/cast [@"..unit.."] " .. activeSpells.Poison end
+        if hasMagic and activeSpells.Magic then return "/cast [@"..unit.."] " .. activeSpells.Magic end
+        -- Fallbacks if no debuff is active but user clicks anyway
         if activeSpells.Poison then return "/cast [@"..unit.."] " .. activeSpells.Poison end
         if activeSpells.Magic then return "/cast [@"..unit.."] " .. activeSpells.Magic end
     elseif clickType == "right" then
+        if hasCurse and activeSpells.Curse then return "/cast [@"..unit.."] " .. activeSpells.Curse end
+        if hasBleed and activeSpells.Bleed then return "/cast [@"..unit.."] " .. activeSpells.Bleed end
+        if hasDisease and activeSpells.Disease then return "/cast [@"..unit.."] " .. activeSpells.Disease end
+        -- Fallbacks if no debuff is active but user clicks anyway
         if activeSpells.Curse then return "/cast [@"..unit.."] " .. activeSpells.Curse end
         if activeSpells.Bleed then return "/cast [@"..unit.."] " .. activeSpells.Bleed end
         if activeSpells.Disease then return "/cast [@"..unit.."] " .. activeSpells.Disease end
@@ -294,9 +302,20 @@ local function UpdateUnitDebuff(unit, button)
 
     UpdateUnitBorderColor(unit, button)
     UpdateUnitRaidTarget(unit, button)
+    
+    -- Dynamically refresh click attributes to align with the new macro priorities
+    if not InCombatLockdown() then
+        button:SetAttribute("macrotext1", GetBestDispelMacro(unit, "left"))
+        button:SetAttribute("macrotext2", GetBestDispelMacro(unit, "right"))
+    end
 end
 
 local function UpdateAllActiveFrames()
+    if InCombatLockdown() then
+        needsSizeUpdate = true
+        return
+    end
+
     local bSize = GetDB("size")
     for unit, btn in pairs(buttons) do
         btn:SetWidth(bSize)
@@ -305,6 +324,7 @@ local function UpdateAllActiveFrames()
             UpdateUnitDebuff(unit, btn)
         end
     end
+    needsSizeUpdate = false
 end
 
 local function UpdateGroupRoster()
@@ -448,6 +468,11 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 UpdateUnitRaidTarget(unit, btn)
             end
         end
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if needsSizeUpdate then
+            UpdateAllActiveFrames()
+        end
+        RefreshButtonVisibility()
     elseif event == "VARIABLES_LOADED" then
         if not DecursiveLiteDB then DecursiveLiteDB = {} end
         if not DecursiveLiteDB.profiles then DecursiveLiteDB.profiles = {} end
@@ -458,7 +483,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 size = 20,
                 maxPerRow = 10,
                 hideSolo = false,
-                ignoreAntivenom = true -- Add profile baseline default
+                ignoreAntivenom = true
             }
         end
         UpdateAllActiveFrames()
@@ -680,7 +705,6 @@ soloCheck:SetScript("OnClick", function(self)
     if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
 
--- NEW OPTION: Antivenom Filter Checkbox!
 local antivenomCheck = CreateFrame("CheckButton", "DecursiveLiteAntivenomCheck", panel, "InterfaceOptionsCheckButtonTemplate")
 antivenomCheck:SetPoint("LEFT", soloCheck, "RIGHT", 220, 0)
 _G[antivenomCheck:GetName() .. "Text"]:SetText("Ignore Poison if Antivenom Buff Active")
