@@ -1,37 +1,58 @@
 local dispelSpells = {
     Poison = {
-        "Roll Back",           -- Chronomancer (Universal Dispel)
-        "Sanctify",            -- Sun Cleric (Dispel: Magic, Poison, Disease)
-        "Elune's Purification",-- Starcaller (Poison & Disease)
+        -- Ascension Archetypes & Universal
+        "Rebuke",              -- Templar (Dispel: Poison, Magic, Disease)
+        "Roll Back",           -- Chronomancer
+        "Sanctify",            -- Sun Cleric
+        "Elune's Purification",-- Starcaller
         "Antivenom",          -- Venomancer
-        "Cure Poison",         
+        -- Classic WoW Spells (Available on Classless)
+        "Abolish Poison",      -- Druid
+        "Cure Poison",         -- Druid / Shaman
+        "Cleanse",             -- Paladin
+        "Purify",              -- Paladin
     },
     Curse = {
-        "Roll Back",           -- Chronomancer (Universal Dispel)
-        "Hexbreak",           -- Witch Doctor (Bound to Right Click)
-        "Blight Antidote",    -- Venomancer (Talent)
-        "Devour Curse",       -- Cultist (Talent)
-        "Remove Curse",        
+        -- Ascension Archetypes & Universal
+        "Roll Back",           -- Chronomancer
+        "Hexbreak",           -- Witch Doctor
+        "Blight Antidote",    -- Venomancer
+        "Devour Curse",       -- Cultist
+        -- Classic WoW Spells (Available on Classless)
+        "Remove Curse",        -- Mage / Druid
+        "Cleanse Spirit",     -- Shaman
     },
     Magic = {
-        "Roll Back",           -- Chronomancer (Universal Dispel)
-        "Sanctify",            -- Sun Cleric (Dispel: Magic, Poison, Disease)
-        "Burn Impurities",    -- Pyromancer (Talent - Bound to Left Click)
-        "Devour Magic",       -- Cultist
-        "Dispel Magic",
-        "Cleanse",
+        -- Ascension Archetypes & Universal
+        "Rebuke",              -- Templar (Dispel: Poison, Magic, Disease)
+        "Roll Back",           -- Chronomancer
+        "Sanctify",            -- Sun Cleric
+        "Burn Impurities",    -- Pyromancer
+        "Devour Magic",       -- Cultist / Warlock Felhunter
+        -- Classic WoW Spells (Available on Classless)
+        "Dispel Magic",        -- Priest
+        "Cleanse",             -- Paladin
+        "Purify",              -- Priest
+        "Cleanse Spirit",     -- Shaman
     },
     Disease = {
-        "Roll Back",           -- Chronomancer (Universal Dispel)
-        "Sanctify",            -- Sun Cleric (Dispel: Magic, Poison, Disease)
-        "Elune's Purification",-- Starcaller (Poison & Disease)
-        "Burn Impurities",    -- Pyromancer (Talent - Bound to Left Click)
-        "Cure Disease",
-        "Purify",
+        -- Ascension Archetypes & Universal
+        "Rebuke",              -- Templar (Dispel: Poison, Magic, Disease)
+        "Roll Back",           -- Chronomancer
+        "Sanctify",            -- Sun Cleric
+        "Elune's Purification",-- Starcaller
+        "Burn Impurities",    -- Pyromancer
+        -- Classic WoW Spells (Available on Classless)
+        "Abolish Disease",     -- Priest
+        "Cure Disease",        -- Priest / Shaman
+        "Cleanse",             -- Paladin
+        "Purify",              -- Paladin
+        "Cleanse Spirit",     -- Shaman
     },
     Bleed = {
-        "Roll Back",           -- Chronomancer (Universal Dispel)
-        "Cauterize",          -- Pyromancer (Talent - Bound to Right Click)
+        -- Ascension Archetypes & Universal (Targeted dispels only)
+        "Roll Back",           -- Chronomancer
+        "Cauterize",          -- Pyromancer
     }
 }
 
@@ -171,9 +192,6 @@ local function PlayerCanDispel(debuffType)
     return activeSpells[debuffType] ~= nil
 end
 
--- FIXED TIMING BUG: Built a dynamic, click-segregated macro generator.
--- Left click ONLY handles Poison/Magic, Right click ONLY handles Curse/Disease/Bleed.
--- This completely prevents "Nothing to dispel" errors when multiple debuffs overlap!
 local function GetBestDispelMacro(unit, clickType)
     if not UnitExists(unit) then return "" end
     
@@ -196,14 +214,12 @@ local function GetBestDispelMacro(unit, clickType)
     if clickType == "left" then
         if hasPoison and activeSpells.Poison then return "/cast [@"..unit.."] " .. activeSpells.Poison end
         if hasMagic and activeSpells.Magic then return "/cast [@"..unit.."] " .. activeSpells.Magic end
-        -- Fallbacks if no debuff is active but user clicks anyway
         if activeSpells.Poison then return "/cast [@"..unit.."] " .. activeSpells.Poison end
         if activeSpells.Magic then return "/cast [@"..unit.."] " .. activeSpells.Magic end
     elseif clickType == "right" then
         if hasCurse and activeSpells.Curse then return "/cast [@"..unit.."] " .. activeSpells.Curse end
         if hasBleed and activeSpells.Bleed then return "/cast [@"..unit.."] " .. activeSpells.Bleed end
         if hasDisease and activeSpells.Disease then return "/cast [@"..unit.."] " .. activeSpells.Disease end
-        -- Fallbacks if no debuff is active but user clicks anyway
         if activeSpells.Curse then return "/cast [@"..unit.."] " .. activeSpells.Curse end
         if activeSpells.Bleed then return "/cast [@"..unit.."] " .. activeSpells.Bleed end
         if activeSpells.Disease then return "/cast [@"..unit.."] " .. activeSpells.Disease end
@@ -303,7 +319,6 @@ local function UpdateUnitDebuff(unit, button)
     UpdateUnitBorderColor(unit, button)
     UpdateUnitRaidTarget(unit, button)
     
-    -- Dynamically refresh click attributes to align with the new macro priorities
     if not InCombatLockdown() then
         button:SetAttribute("macrotext1", GetBestDispelMacro(unit, "left"))
         button:SetAttribute("macrotext2", GetBestDispelMacro(unit, "right"))
