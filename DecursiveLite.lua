@@ -130,23 +130,43 @@ local buttons = {}
 local activeUnits = {} 
 local soundPlayed = false
 local isTesting = false
-local myName = UnitName("player")
+local myName = UnitName("player") or "Default"
 local needsSizeUpdate = false 
 
 local function GetDB(key)
-    local db = DecursiveLiteDB or {}
-    if key == "borderStyle" then return db.borderStyle or "soft" end
-    if key == "size" then return db.size or 20 end
-    if key == "maxPerRow" then return db.maxPerRow or 10 end
-    if key == "hideSolo" then return db.hideSolo == nil and false or db.hideSolo end
-    if key == "ignoreAntivenom" then return db.ignoreAntivenom == nil and true or db.ignoreAntivenom end
+    local db = DecursiveLiteDB
+    if db and db.profiles and db.profiles[myName] then
+        local p = db.profiles[myName]
+        if key == "borderStyle" then return p.borderStyle or "soft" end
+        if key == "size" then return p.size or 20 end
+        if key == "maxPerRow" then return p.maxPerRow or 10 end
+        if key == "hideSolo" then return p.hideSolo == nil and false or p.hideSolo end
+        if key == "ignoreAntivenom" then return p.ignoreAntivenom == nil and true or p.ignoreAntivenom end
+    end
+    -- Fallbacks
+    if key == "borderStyle" then return "soft" end
+    if key == "size" then return 20 end
+    if key == "maxPerRow" then return 10 end
+    if key == "hideSolo" then return false end
+    if key == "ignoreAntivenom" then return true end
     return nil
 end
 
+-- FIXED SAVE BUG: Ensure profile structure exists before writing to prevent setting loss!
 local function SetDB(key, value)
-    if DecursiveLiteDB and DecursiveLiteDB.profiles and DecursiveLiteDB.profiles[myName] then
-        DecursiveLiteDB.profiles[myName][key] = value
+    if not DecursiveLiteDB then DecursiveLiteDB = {} end
+    if not DecursiveLiteDB.profiles then DecursiveLiteDB.profiles = {} end
+    if not myName or myName == "" then myName = UnitName("player") or "Default" end
+    if not DecursiveLiteDB.profiles[myName] then
+        DecursiveLiteDB.profiles[myName] = {
+            borderStyle = "soft",
+            size = 20,
+            maxPerRow = 10,
+            hideSolo = false,
+            ignoreAntivenom = true
+        }
     end
+    DecursiveLiteDB.profiles[myName][key] = value
 end
 
 local function UnitHasAntivenom(unit)
@@ -489,6 +509,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
         RefreshButtonVisibility()
     elseif event == "VARIABLES_LOADED" then
+        myName = UnitName("player") or "Default"
         if not DecursiveLiteDB then DecursiveLiteDB = {} end
         if not DecursiveLiteDB.profiles then DecursiveLiteDB.profiles = {} end
         
@@ -728,6 +749,12 @@ antivenomCheck:SetScript("OnClick", function(self)
     SetDB("ignoreAntivenom", self:GetChecked() and true or false)
     if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
+
+-- Explicitly confirm option state retention on panel Okay click
+panel.okay = function()
+    UpdateAllActiveFrames()
+    if not InCombatLockdown() then RefreshButtonVisibility() end
+end
 
 panel:SetScript("OnShow", function()
     UIDropDownMenu_Initialize(styleDropdown, StyleDropdown_Initialize)
