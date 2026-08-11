@@ -1,6 +1,7 @@
 local dispelSpells = {
     Poison = {
         -- Ascension Archetypes & Universal
+        "Soothing Touch",      -- Primalist (Dispel: Poison, Disease)
         "Rebuke",              -- Templar (Dispel: Poison, Magic, Disease)
         "Roll Back",           -- Chronomancer
         "Sanctify",            -- Sun Cleric
@@ -37,6 +38,7 @@ local dispelSpells = {
     },
     Disease = {
         -- Ascension Archetypes & Universal
+        "Soothing Touch",      -- Primalist (Dispel: Poison, Disease)
         "Rebuke",              -- Templar (Dispel: Poison, Magic, Disease)
         "Roll Back",           -- Chronomancer
         "Sanctify",            -- Sun Cleric
@@ -143,7 +145,6 @@ local function GetDB(key)
         if key == "hideSolo" then return p.hideSolo == nil and false or p.hideSolo end
         if key == "ignoreAntivenom" then return p.ignoreAntivenom == nil and true or p.ignoreAntivenom end
     end
-    -- Fallbacks
     if key == "borderStyle" then return "soft" end
     if key == "size" then return 20 end
     if key == "maxPerRow" then return 10 end
@@ -152,7 +153,6 @@ local function GetDB(key)
     return nil
 end
 
--- FIXED SAVE BUG: Ensure profile structure exists before writing to prevent setting loss!
 local function SetDB(key, value)
     if not DecursiveLiteDB then DecursiveLiteDB = {} end
     if not DecursiveLiteDB.profiles then DecursiveLiteDB.profiles = {} end
@@ -750,7 +750,6 @@ antivenomCheck:SetScript("OnClick", function(self)
     if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
 
--- Explicitly confirm option state retention on panel Okay click
 panel.okay = function()
     UpdateAllActiveFrames()
     if not InCombatLockdown() then RefreshButtonVisibility() end
