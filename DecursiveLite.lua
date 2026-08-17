@@ -144,12 +144,14 @@ local function GetDB(key)
         if key == "maxPerRow" then return p.maxPerRow or 10 end
         if key == "hideSolo" then return p.hideSolo == nil and false or p.hideSolo end
         if key == "ignoreAntivenom" then return p.ignoreAntivenom == nil and true or p.ignoreAntivenom end
+        if key == "showTooltips" then return p.showTooltips == nil and false or p.showTooltips end
     end
     if key == "borderStyle" then return "soft" end
     if key == "size" then return 20 end
     if key == "maxPerRow" then return 10 end
     if key == "hideSolo" then return false end
     if key == "ignoreAntivenom" then return true end
+    if key == "showTooltips" then return false end
     return nil
 end
 
@@ -163,7 +165,8 @@ local function SetDB(key, value)
             size = 20,
             maxPerRow = 10,
             hideSolo = false,
-            ignoreAntivenom = true
+            ignoreAntivenom = true,
+            showTooltips = false
         }
     end
     DecursiveLiteDB.profiles[myName][key] = value
@@ -413,7 +416,7 @@ local function GetOrCreateButton(unit)
     btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
     btn:SetScript("OnEnter", function(self)
-        if UnitExists(unit) then
+        if GetDB("showTooltips") and UnitExists(unit) then
             GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
             GameTooltip:SetUnit(unit)
             GameTooltip:Show()
@@ -519,7 +522,8 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 size = 20,
                 maxPerRow = 10,
                 hideSolo = false,
-                ignoreAntivenom = true
+                ignoreAntivenom = true,
+                showTooltips = false
             }
         end
         UpdateAllActiveFrames()
@@ -654,6 +658,7 @@ local function ProfileDropdown_OnClick(self)
         SetDB("maxPerRow", src.maxPerRow or 10)
         SetDB("hideSolo", src.hideSolo == nil and false or src.hideSolo)
         SetDB("ignoreAntivenom", src.ignoreAntivenom == nil and true or src.ignoreAntivenom)
+        SetDB("showTooltips", src.showTooltips == nil and false or src.showTooltips)
         
         UpdateAllActiveFrames()
         if not InCombatLockdown() then RefreshButtonVisibility() end
@@ -662,6 +667,7 @@ local function ProfileDropdown_OnClick(self)
         _G["DecursiveLiteRowSlider"]:SetValue(GetDB("maxPerRow"))
         _G["DecursiveLiteSoloCheck"]:SetChecked(GetDB("hideSolo"))
         _G["DecursiveLiteAntivenomCheck"]:SetChecked(GetDB("ignoreAntivenom"))
+        _G["DecursiveLiteTooltipCheck"]:SetChecked(GetDB("showTooltips"))
         if GetDB("borderStyle") == "bright" then UIDropDownMenu_SetText(styleDropdown, "Bright Borders (Legacy)")
         else UIDropDownMenu_SetText(styleDropdown, "Soft Borders (Default)") end
         
@@ -750,6 +756,14 @@ antivenomCheck:SetScript("OnClick", function(self)
     if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
 
+local tooltipCheck = CreateFrame("CheckButton", "DecursiveLiteTooltipCheck", panel, "InterfaceOptionsCheckButtonTemplate")
+tooltipCheck:SetPoint("TOPLEFT", soloCheck, "BOTTOMLEFT", 0, -8)
+_G[tooltipCheck:GetName() .. "Text"]:SetText("Show Unit Tooltip on Mouseover")
+
+tooltipCheck:SetScript("OnClick", function(self)
+    SetDB("showTooltips", self:GetChecked() and true or false)
+end)
+
 panel.okay = function()
     UpdateAllActiveFrames()
     if not InCombatLockdown() then RefreshButtonVisibility() end
@@ -774,10 +788,11 @@ panel:SetScript("OnShow", function()
 
     soloCheck:SetChecked(GetDB("hideSolo"))
     antivenomCheck:SetChecked(GetDB("ignoreAntivenom"))
+    tooltipCheck:SetChecked(GetDB("showTooltips"))
 end)
 
 local guideHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-guideHeader:SetPoint("TOPLEFT", soloCheck, "BOTTOMLEFT", 4, -16)
+guideHeader:SetPoint("TOPLEFT", tooltipCheck, "BOTTOMLEFT", 4, -16)
 guideHeader:SetText("Quick Guide & Click Maps:")
 
 local guideText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
