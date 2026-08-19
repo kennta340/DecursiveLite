@@ -144,14 +144,14 @@ local function GetDB(key)
         if key == "maxPerRow" then return p.maxPerRow or 10 end
         if key == "hideSolo" then return p.hideSolo == nil and false or p.hideSolo end
         if key == "ignoreAntivenom" then return p.ignoreAntivenom == nil and true or p.ignoreAntivenom end
-        if key == "showTooltips" then return p.showTooltips == nil and false or p.showTooltips end
+        if key == "tooltipMode" then return p.tooltipMode or "name" end -- "name", "none", "full"
     end
     if key == "borderStyle" then return "soft" end
     if key == "size" then return 20 end
     if key == "maxPerRow" then return 10 end
     if key == "hideSolo" then return false end
     if key == "ignoreAntivenom" then return true end
-    if key == "showTooltips" then return false end
+    if key == "tooltipMode" then return "name" end
     return nil
 end
 
@@ -166,17 +166,18 @@ local function SetDB(key, value)
             maxPerRow = 10,
             hideSolo = false,
             ignoreAntivenom = true,
-            showTooltips = false
+            tooltipMode = "name"
         }
     end
     DecursiveLiteDB.profiles[myName][key] = value
 end
 
-local function UnitHasAntivenom(unit)
+-- Checks if friendly unit has either Antivenom or Abolish Poison ticking
+local function UnitHasPoisonImmunity(unit)
     for i = 1, 40 do
         local name = UnitBuff(unit, i)
         if not name then break end
-        if name == "Antivenom" then
+        if name == "Antivenom" or name == "Abolish Poison" then
             return true
         end
     end
@@ -187,7 +188,7 @@ local function GetUnitDebuffType(unit, index)
     local name, rank, icon, count, debuffType, duration, expirationTime, unitCaster, isStealable, shouldConsolidate, spellId = UnitDebuff(unit, index)
     if not name then return nil end
     
-    if debuffType == "Poison" and GetDB("ignoreAntivenom") and UnitHasAntivenom(unit) then
+    if debuffType == "Poison" and GetDB("ignoreAntivenom") and UnitHasPoisonImmunity(unit) then
         return nil 
     end
     
@@ -416,11 +417,22 @@ local function GetOrCreateButton(unit)
     btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
     btn:SetScript("OnEnter", function(self)
-        if GetDB("showTooltips") and UnitExists(unit) then
+        if not UnitExists(unit) then return end
+        local mode = GetDB("tooltipMode")
+        
+        if mode == "name" then
+            local uName = UnitName(unit)
+            local _, uClass = UnitClass(unit)
+            local cColor = (uClass and RAID_CLASS_COLORS and RAID_CLASS_COLORS[uClass]) or {r=1, g=1, b=1}
+            GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
+            GameTooltip:AddLine(uName, cColor.r, cColor.g, cColor.b)
+            GameTooltip:Show()
+        elseif mode == "full" then
             GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
             GameTooltip:SetUnit(unit)
             GameTooltip:Show()
         end
+        -- mode == "none" renders nothing!
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     
@@ -523,7 +535,7 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 maxPerRow = 10,
                 hideSolo = false,
                 ignoreAntivenom = true,
-                showTooltips = false
+                tooltipMode = "name"
             }
         end
         UpdateAllActiveFrames()
@@ -612,6 +624,7 @@ local desc = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 desc:SetText("A lightweight and highly optimized decurse grid built specifically for Ascension (CoA).")
 
+-- DROPDOWN 1: Border Style
 local dropdownHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 dropdownHeader:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -14)
 dropdownHeader:SetText("Grid Frame Visual Style:")
@@ -641,66 +654,43 @@ local function StyleDropdown_Initialize()
     UIDropDownMenu_AddButton(info)
 end
 
-local profileHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-profileHeader:SetPoint("LEFT", dropdownHeader, "LEFT", 185, 0)
-profileHeader:SetText("Copy Profile From Character:")
+-- DROPDOWN 2: Tooltip Display Mode (Name, None, Full)
+local tooltipHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+tooltipHeader:SetPoint("LEFT", dropdownHeader, "LEFT", 185, 0)
+tooltipHeader:SetText("Mouseover Tooltip Mode:")
 
-local profileDropdown = CreateFrame("Frame", "DecursiveLiteProfileDropdown", panel, "UIDropDownMenuTemplate")
-profileDropdown:SetPoint("TOPLEFT", profileHeader, "BOTTOMLEFT", -15, -2)
-UIDropDownMenu_SetWidth(profileDropdown, 160)
+local tooltipDropdown = CreateFrame("Frame", "DecursiveLiteTooltipDropdown", panel, "UIDropDownMenuTemplate")
+tooltipDropdown:SetPoint("TOPLEFT", tooltipHeader, "BOTTOMLEFT", -15, -2)
+UIDropDownMenu_SetWidth(tooltipDropdown, 160)
 
-local function ProfileDropdown_OnClick(self)
-    local sourceChar = self.value
-    if DecursiveLiteDB and DecursiveLiteDB.profiles and DecursiveLiteDB.profiles[sourceChar] then
-        local src = DecursiveLiteDB.profiles[sourceChar]
-        SetDB("borderStyle", src.borderStyle or "soft")
-        SetDB("size", src.size or 20)
-        SetDB("maxPerRow", src.maxPerRow or 10)
-        SetDB("hideSolo", src.hideSolo == nil and false or src.hideSolo)
-        SetDB("ignoreAntivenom", src.ignoreAntivenom == nil and true or src.ignoreAntivenom)
-        SetDB("showTooltips", src.showTooltips == nil and false or src.showTooltips)
-        
-        UpdateAllActiveFrames()
-        if not InCombatLockdown() then RefreshButtonVisibility() end
-        
-        _G["DecursiveLiteSizeSlider"]:SetValue(GetDB("size"))
-        _G["DecursiveLiteRowSlider"]:SetValue(GetDB("maxPerRow"))
-        _G["DecursiveLiteSoloCheck"]:SetChecked(GetDB("hideSolo"))
-        _G["DecursiveLiteAntivenomCheck"]:SetChecked(GetDB("ignoreAntivenom"))
-        _G["DecursiveLiteTooltipCheck"]:SetChecked(GetDB("showTooltips"))
-        if GetDB("borderStyle") == "bright" then UIDropDownMenu_SetText(styleDropdown, "Bright Borders (Legacy)")
-        else UIDropDownMenu_SetText(styleDropdown, "Soft Borders (Default)") end
-        
-        print("|cFF00FF00DecursiveLite:|r Successfully copied profile from |cFFFFD100" .. sourceChar .. "|r!")
-    end
-    UIDropDownMenu_SetText(profileDropdown, "Select Character Profile")
+local function TooltipDropdown_OnClick(self)
+    UIDropDownMenu_SetSelectedValue(tooltipDropdown, self.value)
+    SetDB("tooltipMode", self.value)
 end
 
-local function ProfileDropdown_Initialize()
+local function TooltipDropdown_Initialize()
     local info = UIDropDownMenu_CreateInfo()
-    if not DecursiveLiteDB or not DecursiveLiteDB.profiles then return end
     
-    local hasProfiles = false
-    for name, _ in pairs(DecursiveLiteDB.profiles) do
-        if name ~= myName then 
-            info.text = name
-            info.value = name
-            info.func = ProfileDropdown_OnClick
-            info.checked = false
-            UIDropDownMenu_AddButton(info)
-            hasProfiles = true
-        end
-    end
+    info.text = "Show Name Only (Default)"
+    info.value = "name"
+    info.func = TooltipDropdown_OnClick
+    info.checked = (GetDB("tooltipMode") == "name")
+    UIDropDownMenu_AddButton(info)
     
-    if not hasProfiles then
-        info.text = "No other profiles found"
-        info.value = nil
-        info.func = nil
-        info.disabled = true
-        UIDropDownMenu_AddButton(info)
-    end
+    info.text = "Hide All (No Tooltips)"
+    info.value = "none"
+    info.func = TooltipDropdown_OnClick
+    info.checked = (GetDB("tooltipMode") == "none")
+    UIDropDownMenu_AddButton(info)
+    
+    info.text = "Full Unit Tooltip"
+    info.value = "full"
+    info.func = TooltipDropdown_OnClick
+    info.checked = (GetDB("tooltipMode") == "full")
+    UIDropDownMenu_AddButton(info)
 end
 
+-- SLIDERS
 local sizeSlider = CreateFrame("Slider", "DecursiveLiteSizeSlider", panel, "OptionsSliderTemplate")
 sizeSlider:SetPoint("TOPLEFT", styleDropdown, "BOTTOMLEFT", 15, -24)
 sizeSlider:SetMinMaxValues(14, 32)
@@ -738,6 +728,7 @@ rowSlider:SetScript("OnValueChanged", function(self, value)
     if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
 
+-- CHECKBOXES
 local soloCheck = CreateFrame("CheckButton", "DecursiveLiteSoloCheck", panel, "InterfaceOptionsCheckButtonTemplate")
 soloCheck:SetPoint("TOPLEFT", sizeSlider, "BOTTOMLEFT", -4, -18)
 _G[soloCheck:GetName() .. "Text"]:SetText("Hide Grid Container When Solo")
@@ -748,21 +739,79 @@ soloCheck:SetScript("OnClick", function(self)
 end)
 
 local antivenomCheck = CreateFrame("CheckButton", "DecursiveLiteAntivenomCheck", panel, "InterfaceOptionsCheckButtonTemplate")
-antivenomCheck:SetPoint("LEFT", soloCheck, "RIGHT", 220, 0)
-_G[antivenomCheck:GetName() .. "Text"]:SetText("Ignore Poison if Antivenom Buff Active")
+antivenomCheck:SetPoint("LEFT", soloCheck, "RIGHT", 200, 0)
+_G[antivenomCheck:GetName() .. "Text"]:SetText("Ignore Poison if Antivenom / Abolish Active")
 
 antivenomCheck:SetScript("OnClick", function(self)
     SetDB("ignoreAntivenom", self:GetChecked() and true or false)
     if not InCombatLockdown() then RefreshButtonVisibility() end
 end)
 
-local tooltipCheck = CreateFrame("CheckButton", "DecursiveLiteTooltipCheck", panel, "InterfaceOptionsCheckButtonTemplate")
-tooltipCheck:SetPoint("TOPLEFT", soloCheck, "BOTTOMLEFT", 0, -8)
-_G[tooltipCheck:GetName() .. "Text"]:SetText("Show Unit Tooltip on Mouseover")
+-- DROPDOWN 3: Copy Profile
+local profileHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+profileHeader:SetPoint("TOPLEFT", soloCheck, "BOTTOMLEFT", 4, -16)
+profileHeader:SetText("Copy Profile From Character:")
 
-tooltipCheck:SetScript("OnClick", function(self)
-    SetDB("showTooltips", self:GetChecked() and true or false)
-end)
+local profileDropdown = CreateFrame("Frame", "DecursiveLiteProfileDropdown", panel, "UIDropDownMenuTemplate")
+profileDropdown:SetPoint("TOPLEFT", profileHeader, "BOTTOMLEFT", -15, -2)
+UIDropDownMenu_SetWidth(profileDropdown, 160)
+
+local function ProfileDropdown_OnClick(self)
+    local sourceChar = self.value
+    if DecursiveLiteDB and DecursiveLiteDB.profiles and DecursiveLiteDB.profiles[sourceChar] then
+        local src = DecursiveLiteDB.profiles[sourceChar]
+        SetDB("borderStyle", src.borderStyle or "soft")
+        SetDB("size", src.size or 20)
+        SetDB("maxPerRow", src.maxPerRow or 10)
+        SetDB("hideSolo", src.hideSolo == nil and false or src.hideSolo)
+        SetDB("ignoreAntivenom", src.ignoreAntivenom == nil and true or src.ignoreAntivenom)
+        SetDB("tooltipMode", src.tooltipMode or "name")
+        
+        UpdateAllActiveFrames()
+        if not InCombatLockdown() then RefreshButtonVisibility() end
+        
+        _G["DecursiveLiteSizeSlider"]:SetValue(GetDB("size"))
+        _G["DecursiveLiteRowSlider"]:SetValue(GetDB("maxPerRow"))
+        _G["DecursiveLiteSoloCheck"]:SetChecked(GetDB("hideSolo"))
+        _G["DecursiveLiteAntivenomCheck"]:SetChecked(GetDB("ignoreAntivenom"))
+        
+        if GetDB("borderStyle") == "bright" then UIDropDownMenu_SetText(styleDropdown, "Bright Borders (Legacy)")
+        else UIDropDownMenu_SetText(styleDropdown, "Soft Borders (Default)") end
+        
+        local tMode = GetDB("tooltipMode")
+        if tMode == "none" then UIDropDownMenu_SetText(tooltipDropdown, "Hide All (No Tooltips)")
+        elseif tMode == "full" then UIDropDownMenu_SetText(tooltipDropdown, "Full Unit Tooltip")
+        else UIDropDownMenu_SetText(tooltipDropdown, "Show Name Only (Default)") end
+        
+        print("|cFF00FF00DecursiveLite:|r Successfully copied profile from |cFFFFD100" .. sourceChar .. "|r!")
+    end
+    UIDropDownMenu_SetText(profileDropdown, "Select Character Profile")
+end
+
+local function ProfileDropdown_Initialize()
+    local info = UIDropDownMenu_CreateInfo()
+    if not DecursiveLiteDB or not DecursiveLiteDB.profiles then return end
+    
+    local hasProfiles = false
+    for name, _ in pairs(DecursiveLiteDB.profiles) do
+        if name ~= myName then 
+            info.text = name
+            info.value = name
+            info.func = ProfileDropdown_OnClick
+            info.checked = false
+            UIDropDownMenu_AddButton(info)
+            hasProfiles = true
+        end
+    end
+    
+    if not hasProfiles then
+        info.text = "No other profiles found"
+        info.value = nil
+        info.func = nil
+        info.disabled = true
+        UIDropDownMenu_AddButton(info)
+    end
+end
 
 panel.okay = function()
     UpdateAllActiveFrames()
@@ -777,6 +826,12 @@ panel:SetScript("OnShow", function()
         UIDropDownMenu_SetText(styleDropdown, "Soft Borders (Default)") 
     end
 
+    UIDropDownMenu_Initialize(tooltipDropdown, TooltipDropdown_Initialize)
+    local tMode = GetDB("tooltipMode")
+    if tMode == "none" then UIDropDownMenu_SetText(tooltipDropdown, "Hide All (No Tooltips)")
+    elseif tMode == "full" then UIDropDownMenu_SetText(tooltipDropdown, "Full Unit Tooltip")
+    else UIDropDownMenu_SetText(tooltipDropdown, "Show Name Only (Default)") end
+
     UIDropDownMenu_Initialize(profileDropdown, ProfileDropdown_Initialize)
     UIDropDownMenu_SetText(profileDropdown, "Select Character Profile")
 
@@ -788,11 +843,10 @@ panel:SetScript("OnShow", function()
 
     soloCheck:SetChecked(GetDB("hideSolo"))
     antivenomCheck:SetChecked(GetDB("ignoreAntivenom"))
-    tooltipCheck:SetChecked(GetDB("showTooltips"))
 end)
 
 local guideHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-guideHeader:SetPoint("TOPLEFT", tooltipCheck, "BOTTOMLEFT", 4, -16)
+guideHeader:SetPoint("TOPLEFT", profileDropdown, "BOTTOMLEFT", 15, -16)
 guideHeader:SetText("Quick Guide & Click Maps:")
 
 local guideText = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -802,7 +856,7 @@ guideText:SetText(
     "- |cFF00FF00Mouse Drag:|r Type |cFF00FF00/dl unlock|r, hold |cFF00FF00Shift|r, and drag the tiny anchor box.\n" ..
     "- |cFF00FF00Left-Click Action:|r Triggers standard Poison / Magic dispel priorities.\n" ..
     "- |cFF00FF00Right-Click Action:|r Triggers standard Curse / Disease / Bleed dispel priorities.\n" ..
-    "- |cFF00FF00Smart Filters:|r Skips casting warnings on units equipped with ticking active Antivenom seeds."
+    "- |cFF00FF00Smart Filters:|r Skips casting warnings on units equipped with ticking Antivenom or Abolish Poison."
 )
 
 local btnHeader = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
